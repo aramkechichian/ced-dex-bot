@@ -12,9 +12,15 @@ import (
 
 func main() {
 	configPath := flag.String("config", "configs/config.yaml", "path to config file")
+	envPath := flag.String("env", ".env", "path to .env file (optional)")
 	flag.Parse()
 
 	log := logger.New("info")
+
+	if err := config.LoadEnvFile(*envPath); err != nil {
+		log.Error("failed to load env file", "path", *envPath, "error", err)
+		os.Exit(1)
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
