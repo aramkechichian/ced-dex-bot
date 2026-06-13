@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/aramik/ced-dex-bot/internal/common"
 	"github.com/aramik/ced-dex-bot/internal/config"
 	"github.com/aramik/ced-dex-bot/internal/logger"
 )
@@ -31,10 +32,14 @@ func main() {
 	log = logger.New(cfg.Logging.Level)
 
 	log.Info("ced-dex-bot starting",
+		"phase", "1-constants",
 		"binance_symbol", cfg.Binance.Symbol,
 		"trade_sizes_eth", cfg.Arbitrage.TradeSizesETH,
 		"min_profit_pct", cfg.Arbitrage.MinProfitPct,
 		"uniswap_pool", cfg.Uniswap.PoolAddress,
+		"weth", common.WETHAddress,
+		"eth_decimals", common.ETHDecimals,
+		"usdc_decimals", common.USDCDecimals,
 	)
 
 	fmt.Println()
@@ -46,7 +51,7 @@ func main() {
 	fmt.Printf("Ethereum HTTP URL:  %s\n", maskURL(cfg.Ethereum.HTTPURL))
 	fmt.Printf("Ethereum WS URL:    %s\n", maskURL(cfg.Ethereum.WSURL))
 	fmt.Println()
-	fmt.Println("Phase 0 complete — bot skeleton is ready.")
+	fmt.Println("Phase 1 complete — constants and errors are ready.")
 }
 
 func maskURL(url string) string {
