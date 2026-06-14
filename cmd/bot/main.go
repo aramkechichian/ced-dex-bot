@@ -114,6 +114,10 @@ func main() {
 
 	quoter := resilience.NewRetryingQuoter(baseQuoter, retryCfg, log)
 	blockSub := ethereum.NewWebSocketSubscriber(cfg.Ethereum.WSURL, log)
+	blockSub.ConfigureBackfill(
+		ethereum.NewHTTPBlockFetcher(uniClient.RPC()),
+		cfg.Ethereum.MaxBackfillBlocksOrDefault(),
+	)
 
 	svc := arbitrage.NewService(
 		svcCfg,
@@ -135,6 +139,7 @@ func main() {
 		"gas_cache_ttl_s", cfg.Resilience.GasCacheTTLSecondsOrDefault(),
 		"binance_rps", cfg.Resilience.BinanceRPSOrDefault(),
 		"rpc_max_retries", cfg.Resilience.RPCMaxRetriesOrDefault(),
+		"max_backfill_blocks", cfg.Ethereum.MaxBackfillBlocksOrDefault(),
 	)
 
 	if err := svc.Run(ctx); err != nil {

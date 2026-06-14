@@ -18,8 +18,16 @@ type Config struct {
 }
 
 type EthereumConfig struct {
-	WSURL   string `yaml:"ws_url"`
-	HTTPURL string `yaml:"http_url"`
+	WSURL             string `yaml:"ws_url"`
+	HTTPURL           string `yaml:"http_url"`
+	MaxBackfillBlocks uint64 `yaml:"max_backfill_blocks"`
+}
+
+func (c EthereumConfig) MaxBackfillBlocksOrDefault() uint64 {
+	if c.MaxBackfillBlocks == 0 {
+		return 10
+	}
+	return c.MaxBackfillBlocks
 }
 
 type BinanceConfig struct {

@@ -63,7 +63,7 @@ func TestReconnectDelayIncreasesWithJitter(t *testing.T) {
 	}
 }
 
-func TestShouldEmitDedupAndGap(t *testing.T) {
+func TestShouldEmitDedup(t *testing.T) {
 	sub := &WebSocketSubscriber{logger: nil}
 
 	b1 := Block{Number: 100, Timestamp: time.Now()}

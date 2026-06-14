@@ -5,7 +5,7 @@ Triggered on each Ethereum block (~12 seconds). Detection only — no trade exec
 
 ## Features
 
-- Block-driven pipeline (WebSocket `newHeads`)
+- Block-driven pipeline (WebSocket `newHeads` + HTTP backfill on gaps)
 - Binance orderbook with effective price / slippage
 - Uniswap V3 QuoterV2 quotes at block height
 - Pure arbitrage detector (CEX→DEX and DEX→CEX)
@@ -102,7 +102,7 @@ internal/
   arbitrage/          Detector, service, pretty, simulate
   binance/            CEX client + slippage
   uniswap/            QuoterV2
-  ethereum/           Block WebSocket subscriber
+  ethereum/           Block WebSocket + HTTP backfill
   cache/              Gas price TTL cache
   resilience/         Rate limit, retry
   notify/             Generic action webhook
@@ -113,6 +113,11 @@ internal/
 ## Configuration
 
 **`configs/config.yaml`** — symbols, trade sizes, fees, resilience tuning.
+
+```yaml
+ethereum:
+  max_backfill_blocks: 10   # HTTP backfill cap after WS gap/reconnect
+```
 
 **`.env`** — secrets:
 
@@ -160,6 +165,49 @@ make docker-down
 
 Image uses Go 1.25; rebuilds automatically via `--build` in Makefile targets.
 
+## WebSocket resilience & block backfill
+
+The bot triggers on each new Ethereum block via `eth_subscribe` (`newHeads`). Real connections drop; after reconnect you may miss blocks while offline.
+
+**Reconnect loop** (`internal/ethereum/websocket.go`):
+
+- Exponential backoff + jitter between dial attempts
+- Re-subscribe to `newHeads` on each connection
+- Dedup by block number (ignore stale/replayed heads)
+- Gap detection: log `block gap detected` when `current > last + 1`
+
+**HTTP backfill** (when a gap is detected):
+
+```
+last emitted = 100, WS delivers block 103
+→ eth_getBlockByNumber for 101, 102 (via HTTP RPC)
+→ emit backfilled blocks in order
+→ emit block 103 from WebSocket
+```
+
+- Uses the same Infura HTTP endpoint as Uniswap quotes (`HTTPBlockFetcher`)
+- Capped by `ethereum.max_backfill_blocks` (default **10**); larger gaps are truncated (most recent N blocks only)
+- If backfill fetch fails mid-range, processing continues with the current WS block
+- Without HTTP fetcher configured, gaps are logged but not filled
+
+```mermaid
+sequenceDiagram
+    participant WS as WebSocket newHeads
+    participant Sub as WebSocketSubscriber
+    participant HTTP as HTTP RPC
+    participant SVC as Arbitrage Service
+
+    WS->>Sub: block 103 (last seen: 100)
+    Sub->>Sub: gap detected (101-102 missed)
+    Sub->>HTTP: eth_getBlockByNumber 101
+    HTTP-->>Sub: header 101
+    Sub->>SVC: emit 101
+    Sub->>HTTP: eth_getBlockByNumber 102
+    HTTP-->>Sub: header 102
+    Sub->>SVC: emit 102
+    Sub->>SVC: emit 103
+```
+
 ## Graceful shutdown
 
 `Ctrl+C` / `SIGTERM` cancels the context; WebSocket and service stop cleanly.
@@ -169,7 +217,6 @@ Image uses Go 1.25; rebuilds automatically via `--build` in Makefile targets.
 | File | Content |
 |------|---------|
 | [DECISIONS.md](DECISIONS.md) | Architecture choices and trade-offs |
-| [TODO.md](TODO.md) | Future improvements |
 | `context.md` | Full technical roadmap (Spanish) |
 | `glossary.md` | DeFi concepts for beginners (Spanish) |
 

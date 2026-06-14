@@ -1,6 +1,7 @@
 ethereum:
   ws_url: "wss://mainnet.infura.io/ws/v3/${INFURA_API_KEY}"
   http_url: "https://mainnet.infura.io/v3/${INFURA_API_KEY}"
+  max_backfill_blocks: 10   # HTTP eth_getBlockByNumber after WS gap/reconnect
 
 binance:
   base_url: "https://api.binance.com"
