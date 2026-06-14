@@ -1,0 +1,32 @@
+package uniswap
+
+// quoterV2ABI uses the flat parameter layout supported by QuoterV2 on mainnet.
+// The tuple/struct encoding reverts; flat quoteExactInputSingle returns normally.
+const quoterV2ABI = `[
+  {
+    "inputs": [
+      {"internalType":"address","name":"tokenIn","type":"address"},
+      {"internalType":"address","name":"tokenOut","type":"address"},
+      {"internalType":"uint24","name":"fee","type":"uint24"},
+      {"internalType":"uint256","name":"amountIn","type":"uint256"},
+      {"internalType":"uint160","name":"sqrtPriceLimitX96","type":"uint160"}
+    ],
+    "name":"quoteExactInputSingle",
+    "outputs":[{"internalType":"uint256","name":"amountOut","type":"uint256"}],
+    "stateMutability":"nonpayable",
+    "type":"function"
+  },
+  {
+    "inputs": [
+      {"internalType":"address","name":"tokenIn","type":"address"},
+      {"internalType":"address","name":"tokenOut","type":"address"},
+      {"internalType":"uint24","name":"fee","type":"uint24"},
+      {"internalType":"uint256","name":"amountOut","type":"uint256"},
+      {"internalType":"uint160","name":"sqrtPriceLimitX96","type":"uint160"}
+    ],
+    "name":"quoteExactOutputSingle",
+    "outputs":[{"internalType":"uint256","name":"amountIn","type":"uint256"}],
+    "stateMutability":"nonpayable",
+    "type":"function"
+  }
+]`
