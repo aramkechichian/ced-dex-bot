@@ -7,12 +7,15 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/aramik/ced-dex-bot/internal/arbitrage"
 	"github.com/aramik/ced-dex-bot/internal/binance"
+	"github.com/aramik/ced-dex-bot/internal/cache"
 	"github.com/aramik/ced-dex-bot/internal/config"
 	"github.com/aramik/ced-dex-bot/internal/ethereum"
 	"github.com/aramik/ced-dex-bot/internal/logger"
+	"github.com/aramik/ced-dex-bot/internal/resilience"
 	"github.com/aramik/ced-dex-bot/internal/uniswap"
 	"github.com/shopspring/decimal"
 )
@@ -46,13 +49,33 @@ func main() {
 	}
 	defer uniClient.Close()
 
-	quoter, err := uniswap.NewQuoterV2(uniClient, cfg.Uniswap)
+	baseQuoter, err := uniswap.NewQuoterV2(uniClient, cfg.Uniswap)
 	if err != nil {
 		log.Error("failed to create uniswap quoter", "error", err)
 		os.Exit(1)
 	}
 
-	binanceClient := binance.NewClient(cfg.Binance.BaseURL, cfg.Binance.OrderbookLimit)
+	memCache := cache.NewMemoryCache()
+	gasEst := arbitrage.NewCachedGasEstimator(
+		arbitrage.NewGasEstimator(uniClient.RPC()),
+		memCache,
+		time.Duration(cfg.Resilience.GasCacheTTLSecondsOrDefault())*time.Second,
+		log,
+	)
+
+	retryCfg := resilience.RetryConfig{
+		MaxAttempts: cfg.Resilience.RPCMaxRetriesOrDefault(),
+		BaseDelay:   time.Duration(cfg.Resilience.RPCRetryBaseMSOrDefault()) * time.Millisecond,
+		MaxDelay:    2 * time.Second,
+	}
+
+	binanceClient := resilience.NewRateLimitedExchange(
+		binance.NewClient(cfg.Binance.BaseURL, cfg.Binance.OrderbookLimit),
+		cfg.Resilience.BinanceRPSOrDefault(),
+		cfg.Resilience.BinanceBurstOrDefault(),
+	)
+
+	quoter := resilience.NewRetryingQuoter(baseQuoter, retryCfg, log)
 	blockSub := ethereum.NewWebSocketSubscriber(cfg.Ethereum.WSURL, log)
 
 	svc := arbitrage.NewService(
@@ -68,13 +91,16 @@ func main() {
 		binance.NewService(),
 		quoter,
 		arbitrage.NewDetector(),
-		arbitrage.NewGasEstimator(uniClient.RPC()),
+		gasEst,
 		log,
 	)
 
 	log.Info("ced-dex-bot starting",
 		"symbol", cfg.Binance.Symbol,
 		"max_blocks", *maxBlocks,
+		"gas_cache_ttl_s", cfg.Resilience.GasCacheTTLSecondsOrDefault(),
+		"binance_rps", cfg.Resilience.BinanceRPSOrDefault(),
+		"rpc_max_retries", cfg.Resilience.RPCMaxRetriesOrDefault(),
 	)
 
 	if err := svc.Run(ctx); err != nil {

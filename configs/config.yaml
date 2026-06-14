@@ -22,5 +22,12 @@ arbitrage:
   min_profit_pct: 0.5
   binance_taker_fee: 0.001
 
+resilience:
+  gas_cache_ttl_seconds: 12   # ~1 Ethereum block
+  binance_rps: 5              # max Binance requests per second
+  binance_burst: 10
+  rpc_max_retries: 3
+  rpc_retry_base_ms: 200
+
 logging:
   level: "info"

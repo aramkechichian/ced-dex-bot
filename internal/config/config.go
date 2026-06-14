@@ -9,11 +9,12 @@ import (
 )
 
 type Config struct {
-	Ethereum  EthereumConfig  `yaml:"ethereum"`
-	Binance   BinanceConfig   `yaml:"binance"`
-	Uniswap   UniswapConfig   `yaml:"uniswap"`
-	Arbitrage ArbitrageConfig `yaml:"arbitrage"`
-	Logging   LoggingConfig   `yaml:"logging"`
+	Ethereum    EthereumConfig    `yaml:"ethereum"`
+	Binance     BinanceConfig     `yaml:"binance"`
+	Uniswap     UniswapConfig     `yaml:"uniswap"`
+	Arbitrage   ArbitrageConfig   `yaml:"arbitrage"`
+	Resilience  ResilienceConfig  `yaml:"resilience"`
+	Logging     LoggingConfig     `yaml:"logging"`
 }
 
 type EthereumConfig struct {
@@ -39,6 +40,49 @@ type ArbitrageConfig struct {
 	TradeSizesETH   []float64 `yaml:"trade_sizes_eth"`
 	MinProfitPct    float64   `yaml:"min_profit_pct"`
 	BinanceTakerFee float64   `yaml:"binance_taker_fee"`
+}
+
+type ResilienceConfig struct {
+	GasCacheTTLSeconds int     `yaml:"gas_cache_ttl_seconds"`
+	BinanceRPS         float64 `yaml:"binance_rps"`
+	BinanceBurst       int     `yaml:"binance_burst"`
+	RPCMaxRetries      int     `yaml:"rpc_max_retries"`
+	RPCRetryBaseMS     int     `yaml:"rpc_retry_base_ms"`
+}
+
+func (r ResilienceConfig) GasCacheTTLSecondsOrDefault() int {
+	if r.GasCacheTTLSeconds <= 0 {
+		return 12
+	}
+	return r.GasCacheTTLSeconds
+}
+
+func (r ResilienceConfig) BinanceRPSOrDefault() float64 {
+	if r.BinanceRPS <= 0 {
+		return 5
+	}
+	return r.BinanceRPS
+}
+
+func (r ResilienceConfig) BinanceBurstOrDefault() int {
+	if r.BinanceBurst <= 0 {
+		return 10
+	}
+	return r.BinanceBurst
+}
+
+func (r ResilienceConfig) RPCMaxRetriesOrDefault() int {
+	if r.RPCMaxRetries <= 0 {
+		return 3
+	}
+	return r.RPCMaxRetries
+}
+
+func (r ResilienceConfig) RPCRetryBaseMSOrDefault() int {
+	if r.RPCRetryBaseMS <= 0 {
+		return 200
+	}
+	return r.RPCRetryBaseMS
 }
 
 type LoggingConfig struct {

@@ -40,11 +40,14 @@ func (g *GasEstimator) SwapCostUSD(ctx context.Context, ethPriceUSD decimal.Deci
 		return decimal.Zero, fmt.Errorf("suggest gas price: %w", err)
 	}
 
+	return swapCostFromGasPrice(gasPrice, ethPriceUSD), nil
+}
+
+func swapCostFromGasPrice(gasPrice *big.Int, ethPriceUSD decimal.Decimal) decimal.Decimal {
 	gasUnits := new(big.Int).SetUint64(appcommon.EstimatedSwapGasUnits)
 	gasCostWei := new(big.Int).Mul(gasPrice, gasUnits)
-
 	ethCost := weiToETH(gasCostWei)
-	return ethCost.Mul(ethPriceUSD), nil
+	return ethCost.Mul(ethPriceUSD)
 }
 
 var _ GasCostEstimator = (*GasEstimator)(nil)
