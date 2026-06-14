@@ -1,12 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
-	"strings"
+	"time"
 
-	"github.com/aramik/ced-dex-bot/internal/common"
+	"github.com/aramik/ced-dex-bot/internal/binance"
 	"github.com/aramik/ced-dex-bot/internal/config"
 	"github.com/aramik/ced-dex-bot/internal/logger"
 )
@@ -31,32 +32,39 @@ func main() {
 
 	log = logger.New(cfg.Logging.Level)
 
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	binanceClient := binance.NewClient(cfg.Binance.BaseURL, cfg.Binance.OrderbookLimit)
+	book, err := binanceClient.GetOrderbook(ctx, cfg.Binance.Symbol)
+	if err != nil {
+		log.Error("failed to fetch binance orderbook", "symbol", cfg.Binance.Symbol, "error", err)
+		os.Exit(1)
+	}
+
+	bid, ask, _ := binance.BestBidAsk(book)
+	spread, _ := binance.Spread(book)
+
 	log.Info("ced-dex-bot starting",
-		"phase", "1-constants",
-		"binance_symbol", cfg.Binance.Symbol,
-		"trade_sizes_eth", cfg.Arbitrage.TradeSizesETH,
-		"min_profit_pct", cfg.Arbitrage.MinProfitPct,
-		"uniswap_pool", cfg.Uniswap.PoolAddress,
-		"weth", common.WETHAddress,
-		"eth_decimals", common.ETHDecimals,
-		"usdc_decimals", common.USDCDecimals,
+		"phase", "3-binance-client",
+		"symbol", book.Symbol,
+		"levels_bids", len(book.Bids),
+		"levels_asks", len(book.Asks),
+		"best_bid", bid.Price.StringFixed(2),
+		"best_ask", ask.Price.StringFixed(2),
+		"spread", spread.StringFixed(2),
 	)
 
 	fmt.Println()
-	fmt.Println("=== Configuration loaded successfully ===")
-	fmt.Printf("Binance symbol:     %s\n", cfg.Binance.Symbol)
-	fmt.Printf("Trade sizes (ETH):  %v\n", cfg.Arbitrage.TradeSizesETH)
-	fmt.Printf("Min profit %%:       %.2f\n", cfg.Arbitrage.MinProfitPct)
-	fmt.Printf("Uniswap pool:       %s\n", cfg.Uniswap.PoolAddress)
-	fmt.Printf("Ethereum HTTP URL:  %s\n", maskURL(cfg.Ethereum.HTTPURL))
-	fmt.Printf("Ethereum WS URL:    %s\n", maskURL(cfg.Ethereum.WSURL))
+	fmt.Println("=== Binance orderbook fetched successfully ===")
+	fmt.Printf("Symbol:       %s\n", book.Symbol)
+	fmt.Printf("Best bid:     $%s (%s ETH)\n", bid.Price.StringFixed(2), bid.Quantity.StringFixed(4))
+	fmt.Printf("Best ask:     $%s (%s ETH)\n", ask.Price.StringFixed(2), ask.Quantity.StringFixed(4))
+	fmt.Printf("Spread:       $%s\n", spread.StringFixed(2))
+	fmt.Printf("Bid levels:   %d\n", len(book.Bids))
+	fmt.Printf("Ask levels:   %d\n", len(book.Asks))
+	fmt.Printf("Last update:  %d\n", book.LastUpdateID)
+	fmt.Printf("Fetched at:   %s\n", book.FetchedAt.Format(time.RFC3339))
 	fmt.Println()
-	fmt.Println("Phase 1 complete — constants and errors are ready.")
-}
-
-func maskURL(url string) string {
-	if idx := strings.LastIndex(url, "/v3/"); idx != -1 {
-		return url[:idx+4] + "***"
-	}
-	return url
+	fmt.Println("Phase 3 complete — Binance client is working.")
 }
