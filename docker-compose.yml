@@ -1,6 +1,11 @@
 services:
   bot:
     build: .
+    env_file:
+      - .env
     environment:
       INFURA_API_KEY: ${INFURA_API_KEY}
+      ACTION_WEBHOOK_URL: ${ACTION_WEBHOOK_URL:-}
     restart: unless-stopped
+    # Override for demo: docker compose run --rm bot -simulate --pretty -notify
+    command: ["-config", "/app/configs/config.yaml"]

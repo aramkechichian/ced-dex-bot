@@ -112,12 +112,6 @@ func Load(path string) (*Config, error) {
 func (c *Config) validate() error {
 	var missing []string
 
-	if strings.TrimSpace(c.Ethereum.WSURL) == "" || hasMissingAPIKey(c.Ethereum.WSURL) {
-		missing = append(missing, "ethereum.ws_url (set INFURA_API_KEY)")
-	}
-	if strings.TrimSpace(c.Ethereum.HTTPURL) == "" || hasMissingAPIKey(c.Ethereum.HTTPURL) {
-		missing = append(missing, "ethereum.http_url (set INFURA_API_KEY)")
-	}
 	if strings.TrimSpace(c.Binance.Symbol) == "" {
 		missing = append(missing, "binance.symbol")
 	}
@@ -127,6 +121,24 @@ func (c *Config) validate() error {
 
 	if len(missing) > 0 {
 		return fmt.Errorf("invalid config: missing or empty fields: %s", strings.Join(missing, ", "))
+	}
+
+	return nil
+}
+
+// ValidateLive checks Ethereum RPC settings required for mainnet mode.
+func (c *Config) ValidateLive() error {
+	var missing []string
+
+	if strings.TrimSpace(c.Ethereum.WSURL) == "" || hasMissingAPIKey(c.Ethereum.WSURL) {
+		missing = append(missing, "ethereum.ws_url (set INFURA_API_KEY)")
+	}
+	if strings.TrimSpace(c.Ethereum.HTTPURL) == "" || hasMissingAPIKey(c.Ethereum.HTTPURL) {
+		missing = append(missing, "ethereum.http_url (set INFURA_API_KEY)")
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf("invalid live config: missing or empty fields: %s", strings.Join(missing, ", "))
 	}
 
 	return nil

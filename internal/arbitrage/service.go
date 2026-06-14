@@ -33,6 +33,7 @@ type Service struct {
 	quoter     uniswap.Quoter
 	detector   *Detector
 	gas        GasCostEstimator
+	emitter    OpportunityEmitter
 	log        *slog.Logger
 	mu         sync.Mutex
 	lastBlock  uint64
@@ -48,6 +49,7 @@ func NewService(
 	quoter uniswap.Quoter,
 	detector *Detector,
 	gas GasCostEstimator,
+	emitter OpportunityEmitter,
 	log *slog.Logger,
 ) *Service {
 	return &Service{
@@ -58,6 +60,7 @@ func NewService(
 		quoter:   quoter,
 		detector: detector,
 		gas:      gas,
+		emitter:  emitter,
 		log:      log,
 	}
 }
@@ -180,7 +183,13 @@ func (s *Service) processBlock(ctx context.Context, block ethereum.Block) error 
 
 		if eval.Opportunity != nil {
 			opportunities++
-			fmt.Println(FormatOpportunity(eval.Opportunity))
+			if err := s.emitter.Emit(ctx, eval.Opportunity, false); err != nil {
+				s.log.Warn("opportunity emit failed",
+					"block", block.Number,
+					"size_eth", eval.Input.TradeSizeETH,
+					"error", err,
+				)
+			}
 		}
 	}
 

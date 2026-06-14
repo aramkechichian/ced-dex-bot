@@ -19,6 +19,7 @@ type BlockReport struct {
 	Opportunities int
 	MinProfitPct  decimal.Decimal
 	Duration      time.Duration
+	Simulated     bool
 }
 
 // FormatBlockTable renders a human-readable ASCII table for one block.
@@ -30,6 +31,10 @@ func FormatBlockTable(r BlockReport) string {
 	rule := strings.Repeat("─", width)
 
 	fmt.Fprintf(&b, "%s\n", top)
+	if r.Simulated {
+		fmt.Fprintf(&b, " [SIMULATED] Demo data from challenge PDF — no live market data\n")
+		fmt.Fprintf(&b, "%s\n", top)
+	}
 	fmt.Fprintf(&b, " Block %-10d │ %s\n",
 		r.Block.Number,
 		r.Block.Timestamp.UTC().Format("2006-01-02 15:04:05 UTC"),
@@ -79,13 +84,25 @@ func formatBlockFooter(r BlockReport) string {
 		bestSize = r.BlockBest.TradeSizeETH.StringFixed(1) + " ETH"
 	}
 
-	return fmt.Sprintf("Best: %s @ %s (%s%%) │ gas $%s │ threshold: %s%% │ opportunities: %d │ %dms",
+	return fmt.Sprintf("Best: %s @ %s (%s%%) │ gas $%s │ threshold: %s%% │ opportunities: %d │ market: %s │ %dms",
 		bestDir,
 		bestSize,
 		bestPct,
 		r.GasUSD.StringFixed(2),
 		r.MinProfitPct.StringFixed(2),
 		r.Opportunities,
+		marketStatus(r.BlockBest, r.MinProfitPct),
 		r.Duration.Milliseconds(),
 	)
+}
+
+func marketStatus(best *Opportunity, threshold decimal.Decimal) string {
+	if best == nil {
+		return "unknown"
+	}
+	if best.ProfitPct.GreaterThanOrEqual(threshold) && best.ProfitUSD.GreaterThan(decimal.Zero) {
+		return "opportunity"
+	}
+	gap := threshold.Sub(best.ProfitPct)
+	return fmt.Sprintf("aligned (%.2f%% below threshold)", gap.InexactFloat64())
 }

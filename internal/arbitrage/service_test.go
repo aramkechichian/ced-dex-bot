@@ -95,6 +95,7 @@ func TestServiceAnalyzeSizeDetectsOpportunity(t *testing.T) {
 		},
 		NewDetector(),
 		&fakeGas{cost: decimal.NewFromFloat(9)},
+		NewOpportunityEmitter(nil, false),
 		slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	)
 
@@ -148,6 +149,7 @@ func TestServiceProcessBlockEndToEnd(t *testing.T) {
 		},
 		NewDetector(),
 		&fakeGas{cost: decimal.NewFromFloat(9)},
+		NewOpportunityEmitter(nil, false),
 		slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	)
 
@@ -193,6 +195,7 @@ func TestServiceProcessBlockPrettyMode(t *testing.T) {
 		},
 		NewDetector(),
 		&fakeGas{cost: decimal.NewFromFloat(1)},
+		NewOpportunityEmitter(nil, false),
 		slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	)
 

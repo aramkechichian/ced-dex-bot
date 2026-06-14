@@ -3,6 +3,8 @@ package arbitrage
 import (
 	"fmt"
 	"strings"
+
+	"github.com/shopspring/decimal"
 )
 
 // FormatOpportunity renders the challenge-style arbitrage alert.
@@ -24,12 +26,22 @@ func FormatOpportunity(opp *Opportunity) string {
 		opp.PriceDiffUSD.StringFixed(2),
 		opp.PriceDiffPct.StringFixed(2),
 	)
-	fmt.Fprintf(&b, "Estimated Profit: $%s (net after gas and fees)\n", opp.ProfitUSD.StringFixed(2))
+	fmt.Fprintf(&b, "Estimated Profit: $%s (before gas and fees)\n", grossProfitUSD(opp).StringFixed(2))
 	fmt.Fprintf(&b, "Gas Cost: $%s\n", opp.GasCostUSD.StringFixed(2))
-	fmt.Fprintf(&b, "Profit %%: %s%%\n", opp.ProfitPct.StringFixed(2))
+	fmt.Fprintf(&b, "Net Profit: $%s (after gas and fees)\n", opp.ProfitUSD.StringFixed(2))
+	fmt.Fprintf(&b, "Return on Capital: %s%%\n", opp.ProfitPct.StringFixed(2))
 	b.WriteString(formatExecutionSteps(opp))
 
 	return b.String()
+}
+
+// grossProfitUSD is the price-spread profit before gas and CEX taker fee adjustments
+// (matches the challenge PDF "Estimated Profit before gas and fees").
+func grossProfitUSD(opp *Opportunity) decimal.Decimal {
+	if opp == nil {
+		return decimal.Zero
+	}
+	return opp.PriceDiffUSD.Mul(opp.TradeSizeETH)
 }
 
 func formatExecutionSteps(opp *Opportunity) string {
