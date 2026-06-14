@@ -5,9 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"time"
+	"os/signal"
+	"syscall"
 
+	"github.com/aramik/ced-dex-bot/internal/arbitrage"
+	"github.com/aramik/ced-dex-bot/internal/binance"
 	"github.com/aramik/ced-dex-bot/internal/config"
+	"github.com/aramik/ced-dex-bot/internal/ethereum"
 	"github.com/aramik/ced-dex-bot/internal/logger"
 	"github.com/aramik/ced-dex-bot/internal/uniswap"
 	"github.com/shopspring/decimal"
@@ -16,87 +20,75 @@ import (
 func main() {
 	configPath := flag.String("config", "configs/config.yaml", "path to config file")
 	envPath := flag.String("env", ".env", "path to .env file (optional)")
+	maxBlocks := flag.Int("blocks", 0, "stop after N blocks (0 = run until interrupted)")
 	flag.Parse()
 
-	log := logger.New("info")
-
 	if err := config.LoadEnvFile(*envPath); err != nil {
-		log.Error("failed to load env file", "path", *envPath, "error", err)
+		fmt.Fprintf(os.Stderr, "failed to load env file %s: %v\n", *envPath, err)
 		os.Exit(1)
 	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		log.Error("failed to load config", "path", *configPath, "error", err)
+		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
 		os.Exit(1)
 	}
 
-	log = logger.New(cfg.Logging.Level)
+	log := logger.New(cfg.Logging.Level)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	rpcClient, err := uniswap.Dial(ctx, cfg.Ethereum.HTTPURL)
+	uniClient, err := uniswap.Dial(ctx, cfg.Ethereum.HTTPURL)
 	if err != nil {
 		log.Error("failed to connect ethereum rpc", "error", err)
 		os.Exit(1)
 	}
-	defer rpcClient.Close()
+	defer uniClient.Close()
 
-	quoter, err := uniswap.NewQuoterV2(rpcClient, cfg.Uniswap)
+	quoter, err := uniswap.NewQuoterV2(uniClient, cfg.Uniswap)
 	if err != nil {
-		log.Error("failed to create quoter", "error", err)
+		log.Error("failed to create uniswap quoter", "error", err)
 		os.Exit(1)
 	}
 
-	blockNum, err := rpcClient.BlockNumber(ctx)
-	if err != nil {
-		log.Error("failed to get block number", "error", err)
+	binanceClient := binance.NewClient(cfg.Binance.BaseURL, cfg.Binance.OrderbookLimit)
+	blockSub := ethereum.NewWebSocketSubscriber(cfg.Ethereum.WSURL, log)
+
+	svc := arbitrage.NewService(
+		arbitrage.ServiceConfig{
+			Symbol:          cfg.Binance.Symbol,
+			TradeSizesETH:   tradeSizesFromConfig(cfg.Arbitrage.TradeSizesETH),
+			BinanceTakerFee: decimal.NewFromFloat(cfg.Arbitrage.BinanceTakerFee),
+			MinProfitPct:    decimal.NewFromFloat(cfg.Arbitrage.MinProfitPct),
+			MaxBlocks:       *maxBlocks,
+		},
+		blockSub,
+		binanceClient,
+		binance.NewService(),
+		quoter,
+		arbitrage.NewDetector(),
+		arbitrage.NewGasEstimator(uniClient.RPC()),
+		log,
+	)
+
+	log.Info("ced-dex-bot starting",
+		"symbol", cfg.Binance.Symbol,
+		"max_blocks", *maxBlocks,
+	)
+
+	if err := svc.Run(ctx); err != nil {
+		log.Error("service exited with error", "error", err)
 		os.Exit(1)
 	}
 
-	fmt.Println()
-	fmt.Println("=== Uniswap V3 QuoterV2 (mainnet) ===")
-	fmt.Printf("Block:        #%d\n", blockNum)
-	fmt.Printf("Pool fee:     0.3%% (tier %d)\n", cfg.Uniswap.Fee)
-	fmt.Println()
+	log.Info("ced-dex-bot stopped")
+}
 
-	for _, size := range cfg.Arbitrage.TradeSizesETH {
-		ethAmount := uniswap.ETHToWei(decimal.NewFromFloat(size))
-
-		sellQuote, err := quoter.QuoteSellETH(ctx, ethAmount, nil)
-		if err != nil {
-			log.Error("sell quote failed", "size_eth", size, "error", err)
-			continue
-		}
-
-		buyQuote, err := quoter.QuoteBuyETH(ctx, ethAmount, nil)
-		if err != nil {
-			log.Error("buy quote failed", "size_eth", size, "error", err)
-			continue
-		}
-
-		usdcOut := decimal.NewFromBigInt(sellQuote.AmountOut, -6)
-		usdcIn := decimal.NewFromBigInt(buyQuote.AmountIn, -6)
-
-		fmt.Printf("%g ETH:\n", size)
-		fmt.Printf("  Sell on Uniswap (WETH→USDC): $%s/ETH → receive ~$%s USDC\n",
-			sellQuote.EffectivePrice.StringFixed(2),
-			usdcOut.StringFixed(2),
-		)
-		fmt.Printf("  Buy on Uniswap  (USDC→WETH): $%s/ETH → spend   ~$%s USDC\n",
-			buyQuote.EffectivePrice.StringFixed(2),
-			usdcIn.StringFixed(2),
-		)
-		fmt.Println()
-
-		log.Info("uniswap quote",
-			"size_eth", size,
-			"sell_usd_per_eth", sellQuote.EffectivePrice.StringFixed(2),
-			"buy_usd_per_eth", buyQuote.EffectivePrice.StringFixed(2),
-			"block", sellQuote.BlockNumber,
-		)
+func tradeSizesFromConfig(sizes []float64) []decimal.Decimal {
+	out := make([]decimal.Decimal, len(sizes))
+	for i, s := range sizes {
+		out[i] = decimal.NewFromFloat(s)
 	}
-
-	fmt.Println("Phase 6 complete — Uniswap quoter is working.")
+	return out
 }
