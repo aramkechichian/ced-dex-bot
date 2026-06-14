@@ -21,6 +21,7 @@ type ServiceConfig struct {
 	BinanceTakerFee decimal.Decimal
 	MinProfitPct    decimal.Decimal
 	MaxBlocks       int // 0 = run until context cancelled
+	Pretty          bool // human-readable table per block (stdout)
 }
 
 // Service wires block events to CEX/DEX pricing and the arbitrage detector.
@@ -76,6 +77,7 @@ func (s *Service) Run(ctx context.Context) error {
 		"symbol", s.cfg.Symbol,
 		"trade_sizes", tradeSizesString(s.cfg.TradeSizesETH),
 		"min_profit_pct", s.cfg.MinProfitPct,
+		"pretty", s.cfg.Pretty,
 	)
 
 	for {
@@ -150,9 +152,11 @@ func (s *Service) processBlock(ctx context.Context, block ethereum.Block) error 
 	blockNum := new(big.Int).SetUint64(block.Number)
 	opportunities := 0
 	sizesChecked := 0
+	var blockBest *Opportunity
+	evaluations := make([]SizeEvaluation, 0, len(s.cfg.TradeSizesETH))
 
 	for _, size := range s.cfg.TradeSizesETH {
-		opp, err := s.analyzeSize(ctx, block, book, blockNum, size, gasUSD)
+		eval, err := s.evaluateSize(ctx, block, book, blockNum, size, gasUSD)
 		if err != nil {
 			s.log.Warn("trade size skipped",
 				"block", block.Number,
@@ -162,11 +166,37 @@ func (s *Service) processBlock(ctx context.Context, block ethereum.Block) error 
 			continue
 		}
 		sizesChecked++
+		evaluations = append(evaluations, eval)
 
-		if opp != nil {
-			opportunities++
-			fmt.Println(FormatOpportunity(opp))
+		if !s.cfg.Pretty {
+			s.logSizeAnalysis(block.Number, eval)
 		}
+
+		if eval.BestEffort != nil {
+			if blockBest == nil || eval.BestEffort.ProfitPct.GreaterThan(blockBest.ProfitPct) {
+				blockBest = eval.BestEffort
+			}
+		}
+
+		if eval.Opportunity != nil {
+			opportunities++
+			fmt.Println(FormatOpportunity(eval.Opportunity))
+		}
+	}
+
+	duration := time.Since(start)
+
+	if s.cfg.Pretty && sizesChecked > 0 {
+		fmt.Println(FormatBlockTable(BlockReport{
+			Block:         block,
+			EthMidUSD:     ethMid,
+			GasUSD:        gasUSD,
+			Evaluations:   evaluations,
+			BlockBest:     blockBest,
+			Opportunities: opportunities,
+			MinProfitPct:  s.cfg.MinProfitPct,
+			Duration:      duration,
+		}))
 	}
 
 	s.mu.Lock()
@@ -174,43 +204,48 @@ func (s *Service) processBlock(ctx context.Context, block ethereum.Block) error 
 	count := s.processed
 	s.mu.Unlock()
 
-	s.log.Info("block analyzed",
-		"block", block.Number,
-		"hash", block.Hash,
-		"sizes_checked", sizesChecked,
-		"opportunities", opportunities,
-		"gas_usd", gasUSD.StringFixed(2),
-		"eth_mid_usd", ethMid.StringFixed(2),
-		"duration_ms", time.Since(start).Milliseconds(),
-		"processed", count,
-	)
+	if !s.cfg.Pretty {
+		s.log.Info("block analyzed",
+			"block", block.Number,
+			"hash", block.Hash,
+			"sizes_checked", sizesChecked,
+			"opportunities", opportunities,
+			"gas_usd", gasUSD.StringFixed(2),
+			"eth_mid_usd", ethMid.StringFixed(2),
+			"best_direction", shortDirection(blockBest),
+			"best_profit_pct", formatProfitPct(blockBest),
+			"min_profit_pct", s.cfg.MinProfitPct.StringFixed(2),
+			"duration_ms", duration.Milliseconds(),
+			"processed", count,
+		)
+	}
 
 	return nil
 }
 
-func (s *Service) analyzeSize(
+func (s *Service) evaluateSize(
 	ctx context.Context,
 	block ethereum.Block,
 	book *binance.Orderbook,
 	blockNum *big.Int,
 	size decimal.Decimal,
 	gasUSD decimal.Decimal,
-) (*Opportunity, error) {
+) (SizeEvaluation, error) {
 	cexPrices, err := s.pricing.EffectivePrices(book, size)
 	if err != nil {
-		return nil, fmt.Errorf("cex prices: %w", err)
+		return SizeEvaluation{}, fmt.Errorf("cex prices: %w", err)
 	}
 
 	ethWei := uniswap.ETHToWei(size)
 
 	sellQuote, err := s.quoter.QuoteSellETH(ctx, ethWei, blockNum)
 	if err != nil {
-		return nil, fmt.Errorf("dex sell quote: %w", err)
+		return SizeEvaluation{}, fmt.Errorf("dex sell quote: %w", err)
 	}
 
 	buyQuote, err := s.quoter.QuoteBuyETH(ctx, ethWei, blockNum)
 	if err != nil {
-		return nil, fmt.Errorf("dex buy quote: %w", err)
+		return SizeEvaluation{}, fmt.Errorf("dex buy quote: %w", err)
 	}
 
 	input := AnalysisInput{
@@ -226,7 +261,63 @@ func (s *Service) analyzeSize(
 		MinProfitPct:    s.cfg.MinProfitPct,
 	}
 
-	return s.detector.Analyze(input), nil
+	return s.detector.Evaluate(input), nil
+}
+
+func (s *Service) logSizeAnalysis(blockNumber uint64, eval SizeEvaluation) {
+	in := eval.Input
+
+	s.log.Info("size analyzed",
+		"block", blockNumber,
+		"size_eth", in.TradeSizeETH.StringFixed(1),
+		"cex_buy_usd", in.CEXBuyUSD.StringFixed(2),
+		"cex_sell_usd", in.CEXSellUSD.StringFixed(2),
+		"dex_sell_usd", in.DEXSellUSD.StringFixed(2),
+		"dex_buy_usd", in.DEXBuyUSD.StringFixed(2),
+		"cex_to_dex_profit_usd", profitUSD(eval.CEXToDEX),
+		"cex_to_dex_profit_pct", profitPct(eval.CEXToDEX),
+		"dex_to_cex_profit_usd", profitUSD(eval.DEXToCEX),
+		"dex_to_cex_profit_pct", profitPct(eval.DEXToCEX),
+		"best_direction", shortDirection(eval.BestEffort),
+		"best_profit_pct", formatProfitPct(eval.BestEffort),
+		"min_profit_pct", in.MinProfitPct.StringFixed(2),
+		"opportunity", eval.Opportunity != nil,
+	)
+}
+
+func profitUSD(opp *Opportunity) string {
+	if opp == nil {
+		return "0.00"
+	}
+	return opp.ProfitUSD.StringFixed(2)
+}
+
+func profitPct(opp *Opportunity) string {
+	if opp == nil {
+		return "0.00"
+	}
+	return opp.ProfitPct.StringFixed(2)
+}
+
+func formatProfitPct(opp *Opportunity) string {
+	if opp == nil {
+		return "0.00"
+	}
+	return opp.ProfitPct.StringFixed(2)
+}
+
+func shortDirection(opp *Opportunity) string {
+	if opp == nil {
+		return "none"
+	}
+	switch opp.Direction {
+	case CEXToDEX:
+		return "CEX→DEX"
+	case DEXToCEX:
+		return "DEX→CEX"
+	default:
+		return "unknown"
+	}
 }
 
 func midPrice(book *binance.Orderbook) (decimal.Decimal, error) {

@@ -15,9 +15,30 @@ func NewDetector() *Detector {
 
 // Analyze checks both directions and returns the best opportunity above threshold, or nil.
 func (d *Detector) Analyze(in AnalysisInput) *Opportunity {
+	return d.Evaluate(in).Opportunity
+}
+
+// SizeEvaluation holds per-size results for logging and detection.
+type SizeEvaluation struct {
+	Input         AnalysisInput
+	CEXToDEX      *Opportunity
+	DEXToCEX      *Opportunity
+	BestEffort    *Opportunity // highest profit regardless of threshold
+	Opportunity   *Opportunity // best above threshold, or nil
+}
+
+// Evaluate runs both directions and returns full per-size snapshot.
+func (d *Detector) Evaluate(in AnalysisInput) SizeEvaluation {
 	cexToDex := d.evaluateCEXToDEX(in)
 	dexToCex := d.evaluateDEXToCEX(in)
-	return pickBest(cexToDex, dexToCex, in.MinProfitPct)
+
+	return SizeEvaluation{
+		Input:       in,
+		CEXToDEX:    cexToDex,
+		DEXToCEX:    dexToCex,
+		BestEffort:  pickBestEffort(cexToDex, dexToCex),
+		Opportunity: pickBest(cexToDex, dexToCex, in.MinProfitPct),
+	}
 }
 
 func (d *Detector) evaluateCEXToDEX(in AnalysisInput) *Opportunity {
@@ -95,6 +116,19 @@ func pickBest(a, b *Opportunity, minProfitPct decimal.Decimal) *Opportunity {
 	}
 
 	return best
+}
+
+func pickBestEffort(a, b *Opportunity) *Opportunity {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	if b.ProfitUSD.GreaterThan(a.ProfitUSD) {
+		return b
+	}
+	return a
 }
 
 func isProfitable(opp *Opportunity, minProfitPct decimal.Decimal) bool {

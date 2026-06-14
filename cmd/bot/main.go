@@ -24,6 +24,7 @@ func main() {
 	configPath := flag.String("config", "configs/config.yaml", "path to config file")
 	envPath := flag.String("env", ".env", "path to .env file (optional)")
 	maxBlocks := flag.Int("blocks", 0, "stop after N blocks (0 = run until interrupted)")
+	pretty := flag.Bool("pretty", false, "print human-readable table per block")
 	flag.Parse()
 
 	if err := config.LoadEnvFile(*envPath); err != nil {
@@ -85,6 +86,7 @@ func main() {
 			BinanceTakerFee: decimal.NewFromFloat(cfg.Arbitrage.BinanceTakerFee),
 			MinProfitPct:    decimal.NewFromFloat(cfg.Arbitrage.MinProfitPct),
 			MaxBlocks:       *maxBlocks,
+			Pretty:          *pretty,
 		},
 		blockSub,
 		binanceClient,
@@ -98,6 +100,7 @@ func main() {
 	log.Info("ced-dex-bot starting",
 		"symbol", cfg.Binance.Symbol,
 		"max_blocks", *maxBlocks,
+		"pretty", *pretty,
 		"gas_cache_ttl_s", cfg.Resilience.GasCacheTTLSecondsOrDefault(),
 		"binance_rps", cfg.Resilience.BinanceRPSOrDefault(),
 		"rpc_max_retries", cfg.Resilience.RPCMaxRetriesOrDefault(),

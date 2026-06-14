@@ -98,7 +98,7 @@ func TestServiceAnalyzeSizeDetectsOpportunity(t *testing.T) {
 		slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	)
 
-	opp, err := svc.analyzeSize(
+	eval, err := svc.evaluateSize(
 		context.Background(),
 		ethereum.Block{Number: 42, Timestamp: time.Now().UTC()},
 		book,
@@ -107,13 +107,16 @@ func TestServiceAnalyzeSizeDetectsOpportunity(t *testing.T) {
 		decimal.NewFromFloat(9),
 	)
 	if err != nil {
-		t.Fatalf("analyzeSize: %v", err)
+		t.Fatalf("evaluateSize: %v", err)
 	}
-	if opp == nil {
+	if eval.Opportunity == nil {
 		t.Fatal("expected opportunity")
 	}
-	if opp.Direction != CEXToDEX {
-		t.Fatalf("direction: %s", opp.Direction)
+	if eval.Opportunity.Direction != CEXToDEX {
+		t.Fatalf("direction: %s", eval.Opportunity.Direction)
+	}
+	if eval.BestEffort == nil {
+		t.Fatal("expected best effort")
 	}
 }
 
@@ -159,6 +162,47 @@ func TestServiceProcessBlockEndToEnd(t *testing.T) {
 	}
 	if svc.processed != 1 {
 		t.Fatalf("processed: %d", svc.processed)
+	}
+}
+
+func TestServiceProcessBlockPrettyMode(t *testing.T) {
+	book := &binance.Orderbook{
+		Symbol: "ETHUSDC",
+		Bids: []binance.Level{
+			{Price: decimal.RequireFromString("2000.00"), Quantity: decimal.NewFromInt(1000)},
+		},
+		Asks: []binance.Level{
+			{Price: decimal.RequireFromString("2010.00"), Quantity: decimal.NewFromInt(1000)},
+		},
+	}
+
+	svc := NewService(
+		ServiceConfig{
+			Symbol:          "ETHUSDC",
+			TradeSizesETH:   []decimal.Decimal{decimal.NewFromInt(1)},
+			BinanceTakerFee: decimal.RequireFromString("0.001"),
+			MinProfitPct:    decimal.RequireFromString("0.5"),
+			Pretty:          true,
+		},
+		nil,
+		&fakeExchange{book: book},
+		binance.NewService(),
+		&fakeQuoter{
+			sellUSD: decimal.RequireFromString("2005.00"),
+			buyUSD:  decimal.RequireFromString("2006.00"),
+		},
+		NewDetector(),
+		&fakeGas{cost: decimal.NewFromFloat(1)},
+		slog.New(slog.NewTextHandler(os.Stderr, nil)),
+	)
+
+	block := ethereum.Block{
+		Number:    200,
+		Timestamp: time.Now().UTC(),
+	}
+
+	if err := svc.processBlock(context.Background(), block); err != nil {
+		t.Fatalf("processBlock: %v", err)
 	}
 }
 
