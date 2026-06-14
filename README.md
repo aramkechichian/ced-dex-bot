@@ -212,13 +212,6 @@ sequenceDiagram
 
 `Ctrl+C` / `SIGTERM` cancels the context; WebSocket and service stop cleanly.
 
-## Documentation
-
-| File | Content |
-|------|---------|
-| `context.md` | Full technical roadmap (Spanish) |
-| `glossary.md` | DeFi concepts for beginners (Spanish) |
-
 ## Development
 
 ```bash
