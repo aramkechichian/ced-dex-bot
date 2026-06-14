@@ -216,7 +216,6 @@ sequenceDiagram
 
 | File | Content |
 |------|---------|
-| [DECISIONS.md](DECISIONS.md) | Architecture choices and trade-offs |
 | `context.md` | Full technical roadmap (Spanish) |
 | `glossary.md` | DeFi concepts for beginners (Spanish) |
 
